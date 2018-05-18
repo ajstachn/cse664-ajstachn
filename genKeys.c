@@ -12,8 +12,8 @@ int main(int argc, char** argv)
 	fmpz_init(x);
 	fmpz_init(y);
 
-	randGroupElt(x);
-	fmpz_powm(y,g_generator1,x,g_groupOrder);
+	randUnitModQ(x);
+	fmpz_powm(y,g_generator2,x,g_groupMod);
 
 	snprintf(keyname,128,"keys/private_key_%d",g_rank);
 	file=fopen(keyname,"w");

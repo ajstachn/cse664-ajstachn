@@ -1,11 +1,12 @@
 #include "util.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <mpi.h>
 #include <sys/random.h>
 
 int g_rank, g_np;
-fmpz_t g_groupOrder,g_generator1,g_generator2;
+fmpz_t g_groupMod,g_groupOrder,g_generator1,g_generator2;
 
 void init(int argc, char** argv)
 {
@@ -19,8 +20,12 @@ void init(int argc, char** argv)
 	MPI_Comm_rank(MPI_COMM_WORLD,&g_rank);
 	MPI_Comm_size(MPI_COMM_WORLD,&g_np);
 
+	fmpz_init(g_groupMod);
+	fmpz_set_str(g_groupMod,PRIME_GROUP_MODULUS,16);
+
 	fmpz_init(g_groupOrder);
-	fmpz_set_str(g_groupOrder,PRIME_GROUP_ORDER,16);
+	fmpz_sub_ui(g_groupOrder,g_groupMod,1);
+	fmpz_divexact_ui(g_groupOrder,g_groupOrder,2);
 
 	fmpz_init(g_generator1);
 	fmpz_set_str(g_generator1,GROUP_GENERATOR1,16);
@@ -53,6 +58,7 @@ void read_public_key(fmpz_t key,int pid)
 
 void cleanup()
 {
+	fmpz_clear(g_groupMod);
 	fmpz_clear(g_groupOrder);
 	fmpz_clear(g_generator1);
 	fmpz_clear(g_generator2);
@@ -69,6 +75,7 @@ void exportGroupElt(fmpz_t n,char* buf)
 	FILE *file=tmpfile();
 	fmpz_out_raw(file,n);
 	rewind(file);
+	memset(buf,0,GROUP_ELT_SIZE);
 	fread(buf,1,GROUP_ELT_SIZE,file);
 	fclose(file);
 }
@@ -82,9 +89,25 @@ void importGroupElt(fmpz_t n,char* buf)
 	fclose(file);
 }
 
+void randModQ(fmpz_t n)
+{
+	randInt(n,g_groupOrder,8191);
+}
+
+void randUnitModQ(fmpz_t n)
+{
+	while (1) {
+		randModQ(n);
+		if (!fmpz_is_zero(n)) {
+			break;
+		}
+	}
+}
+
 void randGroupElt(fmpz_t n)
 {
-	randInt(n,g_groupOrder,1024);
+	randInt(n,g_groupMod,8192);
+	fmpz_powm(n,g_generator1,n,g_groupMod);
 }
 
 void evalPoly(fmpz_t y,fmpz_poly_t p, ulong x)
@@ -126,7 +149,7 @@ void hashElts(fmpz_t result, fmpz *elts, int n)
 	EVP_DigestFinal_ex(mdctx,digest,&md_len);
 	EVP_MD_CTX_destroy(mdctx);
 	
-	hashToGroupElt(result,digest,md_len);
+	hashToFmpz(result,digest,md_len);
 	free(buf);
 	free(digest);
 }
@@ -143,7 +166,7 @@ void randPoly(fmpz_poly_t p, int degree)
 	fmpz_poly_init2(p,degree);
 	
 	for (i=0;i<degree;++i) {
-		randGroupElt(x);
+		randModQ(x);
 		fmpz_poly_set_coeff_fmpz(p,i,x);
 	}
 
@@ -172,7 +195,7 @@ void lagrangeCoeff(fmpz_t c,int n,int i)
 
 const char hexLookup[]="0123456789ABCDEF";
 
-void hashToGroupElt(fmpz_t n,char* hash,int md_len)
+void hashToFmpz(fmpz_t n,char* hash,int md_len)
 {
 	char str[EVP_MAX_MD_SIZE*2+1];
 	int i;
@@ -185,20 +208,25 @@ void hashToGroupElt(fmpz_t n,char* hash,int md_len)
 }
 
 //Return n in [0,maxVal)
-//maxValLogCeil must be >= log_256(maxVal)
+//maxValLogCeil must be >= log_2(maxVal)
 void randInt(fmpz_t n, fmpz_t maxVal, int maxValLogCeil)
 {
 	char *bytes,*str;
-	int i;
-	bytes=malloc(sizeof(char)*maxValLogCeil);
-	str=malloc(sizeof(char)*maxValLogCeil*2+1);
+	int i,maxValLog256Ceil,overflow;
+	
+	maxValLog256Ceil=1+(maxValLogCeil/8);
+	overflow=(maxValLog256Ceil*8)-maxValLogCeil;
+	
+	bytes=malloc(sizeof(char)*maxValLog256Ceil);
+	str=malloc(sizeof(char)*maxValLog256Ceil*2+1);
 	while (1) {
-		RAND_bytes(bytes,maxValLogCeil);
-		for (i=0;i<maxValLogCeil;++i) {
+		RAND_bytes(bytes,maxValLog256Ceil);
+		bytes[0] &= (0xFF >> (8-overflow));
+		for (i=0;i<maxValLog256Ceil;++i) {
 			str[2*i]=hexLookup[bytes[i]&0xF];
 			str[2*i+1]=hexLookup[(bytes[i]&0xF0)>>4];
 		}
-		str[2*maxValLogCeil]='\0';
+		str[2*maxValLog256Ceil]='\0';
 		fmpz_set_str(n,str,16);
 		if (fmpz_cmp(n,maxVal) < 0) {
 			break;
@@ -249,6 +277,14 @@ void bcast_fmpz(fmpz_t n, int root)
 	}
 }
 
+void bcast_fmpz_vec(fmpz *arr)
+{
+	int i;
+	for (i=0;i<g_np;++i) {
+		bcast_fmpz(arr+i,i);
+	}
+}
+
 void bcast_n_fmpz(fmpz *arr, int n, int root)
 {
 	int i;
@@ -260,7 +296,7 @@ void bcast_n_fmpz(fmpz *arr, int n, int root)
 void bcast_all_n_fmpz(fmpz *arr, int n)
 {
 	int i;
-	for (i=0;i<g_np;++i) {
+	for (i=0;i<n;++i) {
 		bcast_n_fmpz(arr+i*n,n,i);
 	}
 }
@@ -283,19 +319,39 @@ void free_fmpz_array(fmpz *arr, int n)
 	free(arr);
 }
 
-int debugHash(fmpz_t n)
+void setFmpz(fmpz_t a, const fmpz_t b)
+{
+	fmpz_clear(a);
+	fmpz_init_set(a,b);
+}
+
+unsigned int debugHash(fmpz_t n)
 {
 	int retVal;
-	fmpz_t temp,temp2;
+	fmpz_t temp;
+	
 	fmpz_init(temp);
-	fmpz_init(temp2);
-	fmpz_add_ui(temp2,n,0);
-	
-	hashElts(temp,temp2,1);
-	
-	fmpz_mod_ui(temp,temp,4294967291);
+	fmpz_mod_ui(temp,n,4294967291);
 	retVal=fmpz_get_ui(temp);
-	fmpz_clear(temp2);
 	fmpz_clear(temp);
 	return retVal;
+}
+
+void initKeys(fmpz_t privateKey, fmpz **pubKeys)
+{
+	int i;
+	fmpz_init(privateKey);
+	read_private_key(privateKey);
+
+	init_fmpz_array(pubKeys,g_np);
+	for (i=0;i<g_np;++i) {
+		read_public_key((*pubKeys)+i,i);
+	}
+}
+
+void freeKeys(fmpz_t privateKey, fmpz *pubKeys)
+{
+	int i;
+	fmpz_clear(privateKey);
+	free_fmpz_array(pubKeys,g_np);
 }

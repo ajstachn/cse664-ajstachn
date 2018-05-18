@@ -13,3 +13,6 @@ test:
 
 genKeys:
 	mpicc -lflint -lcrypto -lgmp -o genKeys genKeys.c util.c algo.c
+
+debug: all
+	mpirun -hostfile hostfile -np 6 xterm -title "floating-xterm" -e gdb ./main
