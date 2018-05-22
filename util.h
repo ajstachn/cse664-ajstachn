@@ -26,7 +26,6 @@ void randInt(fmpz_t n, fmpz_t maxVal, int maxValLogCeil);
 void seedRNG();
 void print_hex_memory(void *mem);
 void randModQ(fmpz_t n);
-void randUnitModQ(fmpz_t n);
 void randGroupElt(fmpz_t n);
 void evalPoly(fmpz_t y,fmpz_poly_t p, ulong x);
 void randPoly(fmpz_poly_t p, int degree);

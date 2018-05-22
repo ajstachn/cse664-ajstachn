@@ -94,16 +94,6 @@ void randModQ(fmpz_t n)
 	randInt(n,g_groupOrder,8191);
 }
 
-void randUnitModQ(fmpz_t n)
-{
-	while (1) {
-		randModQ(n);
-		if (!fmpz_is_zero(n)) {
-			break;
-		}
-	}
-}
-
 void randGroupElt(fmpz_t n)
 {
 	randInt(n,g_groupMod,8192);
@@ -212,7 +202,7 @@ void hashToFmpz(fmpz_t n,char* hash,int md_len)
 void randInt(fmpz_t n, fmpz_t maxVal, int maxValLogCeil)
 {
 	char *bytes,*str;
-	int i,maxValLog256Ceil,overflow;
+	int i,maxValLog256Ceil,overflow,iters=0;
 	
 	maxValLog256Ceil=1+(maxValLogCeil/8);
 	overflow=(maxValLog256Ceil*8)-maxValLogCeil;
@@ -231,7 +221,9 @@ void randInt(fmpz_t n, fmpz_t maxVal, int maxValLogCeil)
 		if (fmpz_cmp(n,maxVal) < 0) {
 			break;
 		}
+		++iters;
 	}
+	printf("randiters: %d\n",iters);
 	free(str);
 	free(bytes);
 }
