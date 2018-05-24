@@ -2,22 +2,204 @@
 
 #include <mpi.h>
 #include "util.h"
+#include <assert.h>
+
+void verifyVoteSoundness(struct LocalVars *this)
+{
+	int i;
+
+	fmpz_t temp1,temp2;
+
+	fmpz_init(temp1);
+	fmpz_init(temp2);
+
+	for (i=0;i<g_np;++i) {
+		fmpz_add(temp1,(this->voteProofD0)+i,(this->voteProofD1)+i);
+		fmpz_mod(temp1,temp1,g_groupOrder);
+		if (fmpz_cmp(temp1,(this->challenges)+i) != 0) {
+			printf("c=d_0+d_1 mod q failed for voter %u in tallier %u\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
+
+		fmpz_powm(temp1,g_generator1,(this->voteProofR0)+i,g_groupMod);
+		fmpz_powm(temp2,(this->allPolyCoeffExp)+(i*g_np),(this->voteProofD0)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->voteProofA0)+i) != 0) {
+			printf("a0 not correct for voter %u in tallier %u\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
+
+		fmpz_powm(temp1,g_generator2,(this->voteProofR0)+i,g_groupMod);
+		fmpz_powm(temp2,(this->uVotes)+i,(this->voteProofD0)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->voteProofB0)+i) != 0) {
+			printf("b0 not correct for voter %u in tallier %u\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
+
+		fmpz_powm(temp1,g_generator1,(this->voteProofR1)+i,g_groupMod);
+		fmpz_powm(temp2,(this->allPolyCoeffExp)+(i*g_np),(this->voteProofD1)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->voteProofA1)+i) != 0) {
+			printf("a1 not correct for voter %u in tallier %u\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
+
+		fmpz_invmod(temp1,g_generator2,g_groupMod);
+		fmpz_mul(temp1,temp1,(this->uVotes)+i);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		fmpz_powm(temp1,temp1,(this->voteProofD1)+i,g_groupMod);
+		fmpz_powm(temp2,g_generator2,(this->voteProofR1)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->voteProofB1)+i) != 0) {
+			printf("b1 not correct for voter %u in tallier %u\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
+	}
+
+
+	fmpz_clear(temp1);
+	fmpz_clear(temp2);
+}
+
+void publishVoteSoundnessProof(struct LocalVars *this)
+{
+	bcast_fmpz_vec(this->voteProofA0);
+	bcast_fmpz_vec(this->voteProofB0);
+	bcast_fmpz_vec(this->voteProofA1);
+	bcast_fmpz_vec(this->voteProofB1);
+	bcast_fmpz_vec(this->voteProofD0);
+	bcast_fmpz_vec(this->voteProofR0);
+	bcast_fmpz_vec(this->voteProofD1);
+	bcast_fmpz_vec(this->voteProofR1);
+}
+
+void proveVoteSoundness(struct LocalVars *this)
+{
+	fmpz a[2];
+	fmpz b[2];
+	fmpz d[2];
+	fmpz r[2];
+	fmpz_t w,temp1,temp2;
+	int v;
+
+	assert(this->myVote == 0 || this->myVote==1);
+	v=this->myVote;
+
+	fmpz_init(a+0);
+	fmpz_init(b+0);
+	fmpz_init(d+0);
+	fmpz_init(r+0);
+	
+	fmpz_init(a+1);
+	fmpz_init(b+1);
+	fmpz_init(d+1);
+	fmpz_init(r+1);
+	
+	fmpz_init(w);
+	fmpz_init(temp1);
+	fmpz_init(temp2);
+
+	randModQ(w);
+	randModQ(r+1-v);
+	randModQ(d+1-v);
+	
+	fmpz_powm(a+v,g_generator1,w,g_groupMod);
+ 	fmpz_powm(b+v,g_generator2,w,g_groupMod);
+	
+
+	fmpz_powm(temp1,g_generator1,r+1-v,g_groupMod);
+	fmpz_powm(temp2,(this->allPolyCoeffExp)+(g_np*g_rank),d+1-v,g_groupMod);
+	fmpz_mul(temp1,temp1,temp2);
+	fmpz_mod(a+1-v,temp1,g_groupMod);
+
+	fmpz_pow_ui(temp1,g_generator2,1-v);
+	fmpz_invmod(temp1,temp1,g_groupMod);
+	fmpz_mul(temp1,temp1,(this->uVotes)+g_rank);
+	fmpz_mod(temp1,temp1,g_groupMod);
+	fmpz_powm(temp1,temp1,d+1-v,g_groupMod);
+	fmpz_powm(temp2,g_generator2,r+1-v,g_groupMod);
+	fmpz_mul(temp1,temp1,temp2);
+	fmpz_mod(b+1-v,temp1,g_groupMod);
+
+	fmpz_sub(temp1,(this->challenges)+g_rank,d+1-v);
+	fmpz_mod(d+v,temp1,g_groupOrder);
+
+	fmpz_poly_get_coeff_fmpz(temp1,this->myPoly,0);
+	fmpz_mul(temp1,temp1,d+v);
+	fmpz_mod(temp1,temp1,g_groupOrder);
+	fmpz_sub(temp1,w,temp1);
+	fmpz_mod(r+v,temp1,g_groupOrder);
+
+	setFmpz(this->voteProofA0+g_rank,a+0);
+	setFmpz(this->voteProofB0+g_rank,b+0);
+	setFmpz(this->voteProofA1+g_rank,a+1);
+	setFmpz(this->voteProofB1+g_rank,b+1);
+	setFmpz(this->voteProofD0+g_rank,d+0);
+	setFmpz(this->voteProofR0+g_rank,r+0);
+	setFmpz(this->voteProofD1+g_rank,d+1);
+	setFmpz(this->voteProofR1+g_rank,r+1);
+
+	fmpz_clear(a+0);
+	fmpz_clear(b+0);
+	fmpz_clear(d+0);
+	fmpz_clear(r+0);
+	
+	fmpz_clear(a+1);
+	fmpz_clear(b+1);
+	fmpz_clear(d+1);
+	fmpz_clear(r+1);
+	
+	fmpz_clear(w);
+	fmpz_clear(temp1);
+	fmpz_clear(temp2);
+}
+
+void reducePolyPoints(struct LocalVars *this)
+{
+	int i,j;
+
+	for (i=1;i<g_np;++i) {
+		for (j=0;j<g_np;++j) {
+			fmpz_mul((this->allPolyPointsEnc)+j,(this->allPolyPointsEnc)+j,(this->allPolyPointsEnc)+(i*g_np)+j);
+			fmpz_mod((this->allPolyPointsEnc)+j,(this->allPolyPointsEnc)+j,g_groupMod);
+		}
+	}
+
+	fprintf(this->log,"BEGIN Reduced Points\n");
+	for (i=0;i<g_np;++i) {
+		fprintf(this->log,"%u ",debugHash((this->allPolyPointsEnc)+i));
+	}
+	fprintf(this->log,"END Reduced Points\n");
+}
 
 int discreteLog(fmpz_t g,fmpz_t x)
 {
 	fmpz_t temp;
-	int i=0;
+	int i=1;
 
+	if (fmpz_is_one(x)) {
+		return 0;
+	}
+	
 	fmpz_init(temp);
+	setFmpz(temp,g);
 	while(1) {
-		if (g_rank == 0) {
-			printf("discretelog\n");
-		}
-		fmpz_set_ui(temp,i);
-		fmpz_powm(temp,g,temp,g_groupMod);
 		if (fmpz_cmp(temp,x) == 0) {
 			break;
 		}
+		fmpz_mul(temp,temp,g);
+		fmpz_mod(temp,temp,g_groupMod);
+		++i;
 	}
 	return i;
 }
@@ -39,95 +221,74 @@ int tallyVotes(struct LocalVars *this)
 	fmpz_invmod(gv,this->sharedSecret,g_groupMod);
 	fmpz_mul(gv,gv,uStar);
 	fmpz_mod(gv,gv,g_groupMod);
+	
 	return discreteLog(g_generator2,gv);
 }
 
 void reconstructSecret(struct LocalVars *this)
 {
-	fmpz *yStar;
 	fmpz_t lambda,temp;
 	int voter,i;
 
-	init_fmpz_array(&yStar,g_np);
 	fmpz_init(lambda);
 	fmpz_init(temp);
 	
-	for (i=0;i<g_np;++i) {
-		fmpz_set_ui(yStar+i,1);
-		for (voter=0;voter<g_np;++voter) {
-			fmpz_mul(yStar+i,yStar+i,(this->shares)+(voter*g_np)+i);
-			fmpz_mod(yStar+i,yStar+i,g_groupMod);
-		}
-	}
-
 	fmpz_set_ui(this->sharedSecret,1);
 	for (i=0;i<g_np;++i) {
-		lagrangeCoeff(lambda,g_np,i);
-		fmpz_powm(temp,yStar+i,lambda,g_groupMod);
+		lagrangeCoeff(lambda,g_np,i+1);
+		fmpz_powm(temp,(this->shares)+i,lambda,g_groupMod);
 		fmpz_mul(this->sharedSecret,this->sharedSecret,temp);
 		fmpz_mod(this->sharedSecret,this->sharedSecret,g_groupMod);
 	}
+	
 	fprintf(this->log,"Shared secret:\n");
 	fmpz_fprint(this->log,this->sharedSecret);
 	fprintf(this->log,"\n\n");
 
-	free_fmpz_array(yStar,g_np);
 	fmpz_clear(lambda);
 	fmpz_clear(temp);
 }
 
 void verifyShares(struct LocalVars *this)
 {
-	int tallier,i;
-	fmpz_t temp1,temp2,ri,ci;
+	int i;
+	fmpz_t temp1,temp2;
 
 	fmpz_init(temp1);
 	fmpz_init(temp2);
-	fmpz_init(ri);
-	fmpz_init(ci);
 
-	for (tallier=0;tallier<g_np;++tallier) {
-		for (i=0;i<g_np;++i) {
-			setFmpz(ri,(this->shareProofs)+(g_np*tallier)+i);
-			setFmpz(ci,(this->challenges)+tallier);
-			
-			fmpz_powm(temp1,g_generator2,ri,g_groupMod);
-			fmpz_powm(temp2,(this->pubKeys)+tallier,ci,g_groupMod);
-			fmpz_mul(temp1,temp1,temp2);
-			fmpz_mod(temp1,temp1,g_groupMod);
-			fprintf(this->log,"%u %u\n",debugHash(temp1),debugHash((this->shareA1s)+(g_np*tallier)+i));
-			if (fmpz_cmp(temp1,(this->shareA1s)+(g_np*tallier)+i) != 0) {
-				printf("Error a1s do not match, Tallier: %d, Verifier %d\n",tallier,g_rank);
-				cleanup();
-				exit(0);
-			}
+	for (i=0;i<g_np;++i) {
+		fmpz_powm(temp1,g_generator2,(this->shareResponses)+i,g_groupMod);
+		fmpz_powm(temp2,(this->pubKeys)+i,(this->challenges)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->shareA1s)+i) != 0) {
+			printf("Error a1s do not match, Tallier: %d, Verifier %d\n",i,g_rank);
+			cleanup();
+			exit(0);
+		}
 
-			fmpz_powm(temp1,(this->shares)+(g_np*tallier)+i,ri,g_groupMod);
-			fmpz_powm(temp2,(this->allPolyPointsEnc)+(i*g_np)+tallier,ci,g_groupMod);
-			fmpz_mul(temp1,temp1,temp2);
-			fmpz_mod(temp1,temp1,g_groupMod);
-			fprintf(this->log,"%u %u\n",debugHash(temp1),debugHash((this->shareA2s)+(g_np*tallier)+i));
-			if (fmpz_cmp(temp1,(this->shareA2s)+(g_np*tallier)+i) != 0) {
-				printf("Error a2s do not match, Tallier: %d, Verifier %d\n",tallier,g_rank);
-				cleanup();
-				exit(0);
-			}
+		fmpz_powm(temp1,(this->shares)+i,(this->shareResponses)+i,g_groupMod);
+		fmpz_powm(temp2,(this->allPolyPointsEnc)+i,(this->challenges)+i,g_groupMod);
+		fmpz_mul(temp1,temp1,temp2);
+		fmpz_mod(temp1,temp1,g_groupMod);
+		if (fmpz_cmp(temp1,(this->shareA2s)+i) != 0) {
+			printf("Error a2s do not match, Tallier: %d, Verifier %d\n",i,g_rank);
+			cleanup();
+			exit(0);
 		}
 	}
 
 	fmpz_clear(temp1);
 	fmpz_clear(temp2);
-	fmpz_clear(ri);
-	fmpz_clear(ci);
 }
 
 void publishShares(struct LocalVars *this)
 {
-	bcast_all_n_fmpz(this->shares,g_np);
-	bcast_all_n_fmpz(this->shareProofs,g_np);
-
-	bcast_all_n_fmpz(this->shareA1s,g_np);
-	bcast_all_n_fmpz(this->shareA2s,g_np);
+	bcast_fmpz_vec(this->shares);
+	bcast_fmpz_vec(this->shareResponses);
+	bcast_fmpz_vec(this->shareA1s);
+	bcast_fmpz_vec(this->shareA2s);
 }
 
 void newRand(struct LocalVars *this)
@@ -140,34 +301,27 @@ void newRand(struct LocalVars *this)
 
 void computeShare(struct LocalVars *this)
 {
-	int voter;
-	fmpz_t x,pointEnc;
-
-	fmpz_t y,z;
+	fmpz_t x,y,rand;
 	fmpz_init(y);
-	fmpz_init(z);
-	
 	fmpz_init(x);
-	fmpz_init(pointEnc);
-	for (voter=0;voter<g_np;++voter) {
-		setFmpz(pointEnc,(this->allPolyPointsEnc)+(voter*g_np)+g_rank);
-		fmpz_invmod(x,this->privateKey,g_groupOrder);
-		fmpz_powm(y,pointEnc,x,g_groupMod);
-		fmpz_powm(z,y,this->privateKey,g_groupMod);
-		setFmpz((this->shares)+(g_np*g_rank)+voter,y);
+	fmpz_init(rand);
 
-		fmpz_powm((this->shareA1s)+(g_np*g_rank)+voter,g_generator2,(this->wVec)+voter,g_groupMod);
-		fmpz_powm((this->shareA2s)+(g_np*g_rank)+voter,y,(this->wVec)+voter,g_groupMod);
+	randModQ(rand);
 
-		DLEQ_prove(g_generator2,
-		           (this->pubKeys)+g_rank,
-		           y,
-		           pointEnc,
-		           this->privateKey,
-		           (this->challenges)+g_rank,
-		           (this->wVec)+voter,
-		           (this->shareProofs)+(g_np*g_rank)+voter);
-	}
+	fmpz_invmod(x,this->privateKey,g_groupOrder);
+	fmpz_powm((this->shares)+g_rank,(this->allPolyPointsEnc)+g_rank,x,g_groupMod);
+
+	fmpz_powm((this->shareA1s)+g_rank,g_generator2,rand,g_groupMod);
+	fmpz_powm((this->shareA2s)+g_rank,(this->shares)+g_rank,rand,g_groupMod);
+
+	DLEQ_prove(g_generator2,
+	           (this->pubKeys)+g_rank,
+	           (this->shares)+g_rank,
+	           (this->allPolyPointsEnc)+g_rank,
+	           this->privateKey,
+	           (this->challenges)+g_rank,
+	           rand,
+	           (this->shareResponses)+g_rank);
 	fmpz_clear(x);
 }
 
@@ -340,10 +494,19 @@ void initVars(struct LocalVars *this)
 
 	init_fmpz_array(&(this->allResponses),g_np*g_np);
 
-	init_fmpz_array(&(this->shares),g_np*g_np);
-	init_fmpz_array(&(this->shareProofs),g_np*g_np);
-	init_fmpz_array(&(this->shareA1s),g_np*g_np);
-	init_fmpz_array(&(this->shareA2s),g_np*g_np);
+	init_fmpz_array(&(this->shares),g_np);
+	init_fmpz_array(&(this->shareResponses),g_np);
+	init_fmpz_array(&(this->shareA1s),g_np);
+	init_fmpz_array(&(this->shareA2s),g_np);
+
+	init_fmpz_array(&(this->voteProofA0),g_np);
+	init_fmpz_array(&(this->voteProofB0),g_np);
+	init_fmpz_array(&(this->voteProofA1),g_np);
+	init_fmpz_array(&(this->voteProofB1),g_np);
+	init_fmpz_array(&(this->voteProofD0),g_np);
+	init_fmpz_array(&(this->voteProofR0),g_np);
+	init_fmpz_array(&(this->voteProofD1),g_np);
+	init_fmpz_array(&(this->voteProofR1),g_np);
 
 	snprintf(path,128,"logs/log_%d",g_rank);
 	this->log=fopen(path,"w");
@@ -368,10 +531,19 @@ void freeVars(struct LocalVars *this)
 
 	free_fmpz_array(this->allResponses,g_np*g_np);
 
-	free_fmpz_array(this->shares,g_np*g_np);
-	free_fmpz_array(this->shareProofs,g_np*g_np);
-	free_fmpz_array(this->shareA1s,g_np*g_np);
-	free_fmpz_array(this->shareA2s,g_np*g_np);
+	free_fmpz_array(this->shares,g_np);
+	free_fmpz_array(this->shareResponses,g_np);
+	free_fmpz_array(this->shareA1s,g_np);
+	free_fmpz_array(this->shareA2s,g_np);
+
+	free_fmpz_array(this->voteProofA0,g_np);
+	free_fmpz_array(this->voteProofB0,g_np);
+	free_fmpz_array(this->voteProofA1,g_np);
+	free_fmpz_array(this->voteProofB1,g_np);
+	free_fmpz_array(this->voteProofD0,g_np);
+	free_fmpz_array(this->voteProofR0,g_np);
+	free_fmpz_array(this->voteProofD1,g_np);
+	free_fmpz_array(this->voteProofR1,g_np);
 
 	free_fmpz_array(this->wVec,g_np);
 	fprintf(this->log,"END Log\n\n");

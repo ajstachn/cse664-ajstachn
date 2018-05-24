@@ -30,8 +30,14 @@ int main(int argc, char** argv)
 	this.myVote=votes[g_rank];
 	computeCYU(&this);
 
-	fprintf(this.log,"Secret:\n");
-	fmpz_fprint(this.log,fmpz_poly_get_coeff_ptr(this.myPoly,0));
+	fprintf(this.log,"Polynomial:\n");
+	for (i=0;i<g_np;++i) {
+		fmpz_fprint(this.log,fmpz_poly_get_coeff_ptr(this.myPoly,i));
+		fprintf(this.log,"\n\n");
+	}
+
+	fprintf(this.log,"Key:\n");
+	fmpz_fprint(this.log,this.privateKey);
 	fprintf(this.log,"\n\n");
 
 	generateChallenge(&this);
@@ -39,26 +45,44 @@ int main(int argc, char** argv)
 
 	logShared(&this);
 	publishCYUR(&this);
+	if (g_rank == 0) {
+		printf("Secret shares distributed\n");
+	}
+
+	proveVoteSoundness(&this);
+	publishVoteSoundnessProof(&this);
+	verifyVoteSoundness(&this);
+	if (g_rank == 0) {
+		printf("Vote soundness verified\n");
+	}
 
 	logShared(&this);
 
 	verifySecret(&this);
 	if (g_rank == 0) {
-		printf("Shared secret established and verified\n");
+		printf("Shared secrets verified\n");
 	}
 
-	newRand(&this);
-
+	reducePolyPoints(&this);
 	computeShare(&this);
+	
+	if (g_rank == 0) {
+		printf("Shares decrypted\n");
+	}
+	
 	publishShares(&this);
 	verifyShares(&this);
+	
 	if (g_rank == 0) {
 		printf("Decrypted votes verified\n");
 	}
 
 	reconstructSecret(&this);
-	//tally=tallyVotes(&this);
-	//printf("%d\n");
+	tally=tallyVotes(&this);
+
+	if (g_rank == 0) {
+		printf("The vote is Yay:%d Nay:%d\n",tally,g_np-tally);
+	}
 
 	freeVars(&this);
 	cleanup();

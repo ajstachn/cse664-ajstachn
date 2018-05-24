@@ -12,7 +12,7 @@ int main(int argc, char** argv)
 	fmpz_init(x);
 	fmpz_init(y);
 
-	randUnitModQ(x);
+	randModQ(x);
 	fmpz_powm(y,g_generator2,x,g_groupMod);
 
 	snprintf(keyname,128,"keys/private_key_%d",g_rank);

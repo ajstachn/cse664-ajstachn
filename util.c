@@ -223,7 +223,6 @@ void randInt(fmpz_t n, fmpz_t maxVal, int maxValLogCeil)
 		}
 		++iters;
 	}
-	printf("randiters: %d\n",iters);
 	free(str);
 	free(bytes);
 }

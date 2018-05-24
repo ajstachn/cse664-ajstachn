@@ -31,8 +31,11 @@ struct LocalVars {
 	fmpz *allResponses;
 
 	fmpz *shares;
-	fmpz *shareProofs;
+	fmpz *shareResponses;
 	fmpz *shareA1s, *shareA2s;
+
+	fmpz *voteProofA0,*voteProofB0,*voteProofA1,*voteProofB1;
+	fmpz *voteProofD0,*voteProofR0,*voteProofD1,*voteProofR1;
 
 	fmpz_t sharedSecret;
 
@@ -48,11 +51,15 @@ void computeDLEQ(struct LocalVars *this);
 void verifySecret(struct LocalVars *this);
 void DLEQ_prove(fmpz_t g1, fmpz_t h1, fmpz_t g2, fmpz_t h2, fmpz_t alpha, fmpz_t c, fmpz_t w, fmpz_t r);
 void newRand(struct LocalVars *this);
+void reducePolyPoints(struct LocalVars *this);
 void computeShare(struct LocalVars *this);
 void publishShares(struct LocalVars *this);
 void verifyShares(struct LocalVars *this);
 void reconstructSecret(struct LocalVars *this);
 int tallyVotes(struct LocalVars *this);
+void proveVoteSoundness(struct LocalVars *this);
+void publishVoteSoundnessProof(struct LocalVars *this);
+void verifyVoteSoundness(struct LocalVars *this);
 
 int discreteLog(fmpz_t g,fmpz_t x);
 
